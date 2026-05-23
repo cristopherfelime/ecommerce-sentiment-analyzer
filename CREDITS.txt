@@ -1,0 +1,5 @@
+Tokopedia Product Reviews:
+https://www.kaggle.com/datasets/salmanabdu/tokopedia-product-reviews-2025
+
+Indonesian Lexicon Dictionary:
+https://github.com/nasalsabila/kamus-alay/blame/master/colloquial-indonesian-lexicon.csv

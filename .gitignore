@@ -1,0 +1,14 @@
+# ignore environments
+env/
+venv/
+.conda/
+
+# ignore python caches
+__pycache__/
+.ipynb_checkpoints
+*.pyc
+
+# ignore large datasets
+*.csv
+*.xlsx
+*.parquet
