@@ -12,3 +12,5 @@ __pycache__/
 *.csv
 *.xlsx
 *.parquet
+
+desktop.ini
