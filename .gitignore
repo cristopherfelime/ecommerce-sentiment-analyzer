@@ -13,4 +13,10 @@ __pycache__/
 *.xlsx
 *.parquet
 
+# database files
+*.db
+*.sql
+*.sqlite
+
+# misc files
 desktop.ini
