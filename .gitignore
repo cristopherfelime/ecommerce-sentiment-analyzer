@@ -20,5 +20,10 @@ __pycache__/
 *.sql
 *.sqlite
 
+# pickle files
+models/
+*.pkl
+*.joblib
+
 # misc files
 desktop.ini
