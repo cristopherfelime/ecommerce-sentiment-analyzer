@@ -1,0 +1,131 @@
+import pipeline
+import data_ingestion
+
+import numpy as np
+import pandas as pd
+import joblib
+import os
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.svm import LinearSVC
+from sklearn.metrics import classification_report
+
+import nltk
+nltk.download("stopwords")
+from nltk.corpus import stopwords
+
+
+# function to remove missing values
+def clean_missing_val(df):
+    print("Checking for any missing value in columns..")
+    missing_val_col = []
+    for i, j in enumerate(df.isna().any()):
+        if j != False:
+            print(f"Column {i} has missing value!")
+            missing_val_col.append(i)
+
+        else:
+            print(f"No missing value in column {i}")
+    print(f"Following columns have missing value present: {[[df.columns[i] for i in missing_val_col] if missing_val_col else "None"]}")
+    if missing_val_col:
+        print("Removing rows with missing values..")
+        df.dropna(inplace=True)
+        print("Empty values have been removed from the dataset.")
+    print("-----------------------")
+    return df
+
+# function to remove duplicate rows
+def clean_dupe_rows(df):
+    print("Checking for any duplicate rows..")
+    if df.duplicated().any():
+        print(f"A total of {df.duplicated().sum()} duplicate rows have been found in the dataset. Removing them..")
+        df.drop_duplicates(keep="first", inplace=True)
+    print(f"{df.duplicated().sum()} duplicate rows present in the database.\n{str(df.shape[0])} rows left in the database.")
+    print("-----------------------")
+    return df
+
+# function to do both
+def clean_df(df):
+    df = clean_missing_val(df)
+    df = clean_dupe_rows(df)
+    return df
+
+# main training pipeline
+def run_training_pipeline():
+    # fetch data from database
+    query_reviews = """
+        SELECT review_text, sentiment_label
+        FROM reviews;
+    """
+    query_lexicons = """
+        SELECT slang, formal
+        FROM lexicons;
+    """
+    conn, c = data_ingestion.initialize_db()
+    df = pd.read_sql_query(query_reviews, conn)
+    slang_df = pd.read_sql_query(query_lexicons, conn)
+    conn.close()
+
+    # Data Cleaning
+    df = clean_df(df)
+
+    # Clean review text using slang dictionary
+    slang_dict = dict(zip(slang_df["slang"], slang_df["formal"]))
+    print("Cleaning review text using slang dictionary...")
+    df["review_text"] = df["review_text"].apply(lambda x : pipeline.clean_review_text(text=x, data_dict=slang_dict))
+
+    # Ordinal Encoding
+    print("Encoding sentiment labels...")
+    df["sentiment_label"] = df["sentiment_label"].map({"negative" : 0, "neutral" : 1, "positive" : 2})
+
+    # Train-Test split
+    print("Splitting data into training and testing sets...")
+    X = df["review_text"]
+    y = df["sentiment_label"]
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, shuffle=True, stratify=y)
+
+    # Text Vectorization
+    print("Vectorizing text data...")
+    indo_stopwords = stopwords.words("indonesian")
+    vectorizer = TfidfVectorizer(stop_words=indo_stopwords, ngram_range=(1, 2), min_df=3, max_features=15000)
+    X_train_tfidf = vectorizer.fit_transform(X_train)
+    X_test_tfidf = vectorizer.transform(X_test)
+
+    # Model initialization
+    print("Initializing models...")
+    lr_model = LogisticRegression(penalty="l2", class_weight="balanced", C=1.0, max_iter=1000, random_state=42)
+    linearsvc_model = LinearSVC(penalty="l2", class_weight="balanced", C=1.0, dual=False, multi_class="ovr", random_state=42)
+
+    # Model fitting
+    print("Fitting models...")
+    lr_model.fit(X_train_tfidf, y_train)
+    linearsvc_model.fit(X_train_tfidf, y_train)
+
+    # Model prediction
+    print("Making predictions...")
+    lr_preds = lr_model.predict(X_test_tfidf)
+    linearsvc_preds = linearsvc_model.predict(X_test_tfidf)
+
+    # returning relevant objects to be used in the main guard below
+    return y_test, lr_preds, linearsvc_preds, lr_model, linearsvc_model, vectorizer
+
+# function to return classification report
+def classification_report_func(y_test, lr_preds, linearsvc_preds):
+    print("---Logistic Regression---")
+    print(classification_report(y_test, lr_preds))
+    print("---Linear SVC---")
+    print(classification_report(y_test, linearsvc_preds))
+
+# pickling/dumping our trained models
+def dump_models(lr_model, linearsvc_model, vectorizer):
+    os.makedirs("models", exist_ok=True)
+    joblib.dump(lr_model, "models/sentiment_lr_model.pkl")
+    joblib.dump(linearsvc_model, "models/sentiment_linearsvc_model.pkl")
+    joblib.dump(vectorizer, "models/sentiment_vectorizer.pkl")
+    print("Models have been successfully been pickled.")
+
+if __name__ == "__main__":
+    y_test, lr_preds, linearsvc_preds, lr_model, linearsvc_model, vectorizer = run_training_pipeline()
+    classification_report_func(y_test, lr_preds, linearsvc_preds)
+    dump_models(lr_model, linearsvc_model, vectorizer)
