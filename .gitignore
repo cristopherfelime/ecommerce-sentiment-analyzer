@@ -9,11 +9,13 @@ __pycache__/
 *.pyc
 
 # ignore large datasets
+csv/
 *.csv
 *.xlsx
 *.parquet
 
 # database files
+database/
 *.db
 *.db-shm
 *.db-wal

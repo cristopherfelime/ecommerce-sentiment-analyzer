@@ -1,9 +1,15 @@
 import pandas as pd
 import sqlite3
+import os
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # returns the directory where the current script is located
 
 # initialize db connection and cursor
 def initialize_db():
-    conn = sqlite3.connect("ecom_nlp_production.db") # connect to a db (creates one if not exists)
+    db_dir = os.path.join(BASE_DIR, "database") # create a directory string with "database" at the end
+    os.makedirs(db_dir, exist_ok=True) # create the directory based on path above (if it doesn't exist, due to exist_ok=True)
+    db_path = os.path.join(db_dir, "ecom_nlp_production.db") # combining the database folder file and the name of our soon-to-be database to form a path to the database file
+    conn = sqlite3.connect(db_path) # connect to a db from path above (creates one if not exists)
     c = conn.cursor() # initiate cursor object based on the connection
         
     # some good practices for future reference
@@ -19,6 +25,17 @@ def create_schema_data(conn, c):
     c.execute("""
         CREATE TABLE IF NOT EXISTS reviews (
             review_text TEXT,
+            review_date TEXT,
+            review_id INTEGER,
+            product_name TEXT,
+            product_category TEXT,
+            product_variant TEXT,
+            product_price INTEGER,
+            product_url TEXT,
+            product_id INTEGER,
+            rating INTEGER,
+            sold_count INTEGER,
+            shop_id INTEGER,
             sentiment_label TEXT
         )
     """)
@@ -37,7 +54,6 @@ def create_schema_lexicon(conn, c):
 # ingest the raw csv into sqlite
 def ingest_data(csv_path, conn):
     df = pd.read_csv(csv_path)
-    df = df[["review_text", "sentiment_label"]]
     df.to_sql("reviews", conn, if_exists="append", index=False)
     conn.commit()
     print(f"Successfully ingested {len(df)} rows into the database.")
@@ -61,8 +77,8 @@ if __name__ == "__main__":
     conn, c = initialize_db()
     create_schema_data(conn, c)
     create_schema_lexicon(conn, c)
-    ingest_data("tokopedia_product_reviews_2025.csv", conn)
-    ingest_lexicons("colloquial-indonesian-lexicon.csv", conn)
+    ingest_data("csv/tokopedia_product_reviews_2025.csv", conn)
+    ingest_lexicons("csv/colloquial-indonesian-lexicon.csv", conn)
 
 # test
 # c.execute("""

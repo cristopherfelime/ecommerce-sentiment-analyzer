@@ -83,19 +83,52 @@ def run_training_pipeline():
     print("Splitting data into training and testing sets...")
     X = df["review_text"]
     y = df["sentiment_label"]
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, shuffle=True, stratify=y)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X,
+        y,
+        test_size=0.2,
+        random_state=42,
+        shuffle=True,
+        stratify=y
+    )
 
     # Text Vectorization
     print("Vectorizing text data...")
     indo_stopwords = stopwords.words("indonesian")
-    vectorizer = TfidfVectorizer(stop_words=indo_stopwords, ngram_range=(1, 2), min_df=3, max_features=15000)
+    indo_negation_words = {
+        "tidak", "bukan", "jangan", "belum", "tanpa", "kurang", "tak", "tiada",
+        "tidaklah", "bukanlah", "belumlah", "janganlah", 
+        "tidakkah", "bukankah", "belumkah", "bukannya",
+        "nggak", "gak", "ga", "ndak", "kagak", "enggak", "ngga"
+    } # apparently nltk has these listed as stopwords lmao. this is to ensure that no negation words are present in the list of stopwords we're using (so that ngram may work properly)
+    indo_stopwords = [i for i in indo_stopwords if i not in indo_negation_words]
+    vectorizer = TfidfVectorizer(
+        stop_words=indo_stopwords, 
+        ngram_range=(1, 2), 
+        min_df=3, 
+        max_features=20000
+    )
     X_train_tfidf = vectorizer.fit_transform(X_train)
     X_test_tfidf = vectorizer.transform(X_test)
 
     # Model initialization
     print("Initializing models...")
-    lr_model = LogisticRegression(penalty="l2", class_weight="balanced", C=1.0, max_iter=1000, random_state=42)
-    linearsvc_model = LinearSVC(penalty="l2", class_weight="balanced", C=1.0, dual=False, multi_class="ovr", random_state=42)
+    current_optimal_lr = {
+        "C" : np.float64(0.4844998146905259), 
+        "class_weight" : {0: 13.0, 1: 19.0, 2: 1.0}, 
+        "solver" : "lbfgs", 
+        "tol" : 0.0001
+    }
+    current_optimal_svc = {
+        "C" : np.float64(0.4789691464869526),
+        "class_weight" : {0: 12.0, 1: 18.0, 2: 1.0},
+        "dual" : False,
+        "loss" : "squared_hinge",
+        "penalty" : "l2",
+        "tol" : 0.0001
+    }
+    lr_model = LogisticRegression(**current_optimal_lr)
+    linearsvc_model = LinearSVC(**current_optimal_svc)
 
     # Model fitting
     print("Fitting models...")
