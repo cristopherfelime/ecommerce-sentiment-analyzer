@@ -30,7 +30,7 @@ def clean_missing_val(df):
     print(f"Following columns have missing value present: {[[df.columns[i] for i in missing_val_col] if missing_val_col else "None"]}")
     if missing_val_col:
         print("Removing rows with missing values..")
-        df.dropna(inplace=True)
+        df = df.dropna()
         print("Empty values have been removed from the dataset.")
     print("-----------------------")
     return df
@@ -40,7 +40,7 @@ def clean_dupe_rows(df):
     print("Checking for any duplicate rows..")
     if df.duplicated().any():
         print(f"A total of {df.duplicated().sum()} duplicate rows have been found in the dataset. Removing them..")
-        df.drop_duplicates(keep="first", inplace=True)
+        df = df.drop_duplicates(keep="first")
     print(f"{df.duplicated().sum()} duplicate rows present in the database.\n{str(df.shape[0])} rows left in the database.")
     print("-----------------------")
     return df
@@ -52,20 +52,71 @@ def clean_df(df):
     return df
 
 # main training pipeline
-def run_training_pipeline():
+
+# get raw data
+def sql_retrieval_reviews(*reviews_columns):
+
+    # handle case where no column names are given
+    if not reviews_columns:
+        reviews_columns = [
+            "review_text",
+            "sentiment_label"
+        ]
+
+    # SQL injection defense by whitelisting columns
+    whitelisted_columns = { # hey set is great for checking if an item is inside a collection, lowk it's very fast i heard
+        "review_text",
+        "review_date", 
+        "review_id", 
+        "product_name",
+        "product_category",
+        "product_variant",
+        "product_price",
+        "product_url",
+        "product_id",
+        "rating",
+        "sold_count",
+        "shop_id",
+        "sentiment_label"
+    }
+    for i in reviews_columns:
+        if i not in whitelisted_columns:
+            raise ValueError(f"Unauthorized column name \"{i}\" was found. Do NOT even try to SQL Inject lol.")
+
     # fetch data from database
-    query_reviews = """
-        SELECT review_text, sentiment_label
+    columns = ", ".join(reviews_columns)
+    query_reviews = f"""
+        SELECT {columns}
         FROM reviews;
     """
+    conn, _ = data_ingestion.initialize_db()
+
+    # try finally will ensure that the connection is closed even if an error occurs
+    try:
+        df = pd.read_sql_query(query_reviews, conn)
+    finally:
+        conn.close()
+
+    # returning relevant objects to be used in the main guard below
+    return df
+
+def sql_retrieval_lexicons():
+    
     query_lexicons = """
         SELECT slang, formal
         FROM lexicons;
     """
-    conn, c = data_ingestion.initialize_db()
-    df = pd.read_sql_query(query_reviews, conn)
-    slang_df = pd.read_sql_query(query_lexicons, conn)
-    conn.close()
+    conn, _ = data_ingestion.initialize_db()
+    try:
+        slang_df = pd.read_sql_query(query_lexicons, conn)
+    finally:
+        conn.close()
+    
+    # returning relevant objects to be used in the main guard below
+    return slang_df
+
+# function to preprocess data
+def data_preprocessing(df, slang_df):
 
     # Data Cleaning
     df = clean_df(df)
@@ -78,6 +129,12 @@ def run_training_pipeline():
     # Ordinal Encoding
     print("Encoding sentiment labels...")
     df["sentiment_label"] = df["sentiment_label"].map({"negative" : 0, "neutral" : 1, "positive" : 2})
+
+    # returning relevant objects to be used in the main guard below
+    return df
+
+# function to do train-test split
+def perform_tts(df):
 
     # Train-Test split
     print("Splitting data into training and testing sets...")
@@ -92,10 +149,15 @@ def run_training_pipeline():
         stratify=y
     )
 
+    # returning relevant objects to be used in the main guard below
+    return X_train, X_test, y_train, y_test
+
+# function to vectorize text
+def vectorize_test(X_train, X_test):
     # Text Vectorization
     print("Vectorizing text data...")
     indo_stopwords = stopwords.words("indonesian")
-    indo_negation_words = {
+    indo_negation_words = { # set cuz faster
         "tidak", "bukan", "jangan", "belum", "tanpa", "kurang", "tak", "tiada",
         "tidaklah", "bukanlah", "belumlah", "janganlah", 
         "tidakkah", "bukankah", "belumkah", "bukannya",
@@ -111,37 +173,59 @@ def run_training_pipeline():
     X_train_tfidf = vectorizer.fit_transform(X_train)
     X_test_tfidf = vectorizer.transform(X_test)
 
+    # returning relevant objects to be used in the main guard below
+    return X_train_tfidf, X_test_tfidf, vectorizer
+
+def initialize_models(
+    C_lr=0.4844998146905259,
+    C_svc=0.4789691464869526,
+    class_weight_lr={0: 13.0, 1: 19.0, 2: 1.0},
+    class_weight_svc={0: 12.0, 1: 18.0, 2: 1.0},
+    solver_lr="lbfgs",
+    tol_lr=0.0001,
+    dual_svc=False,
+    loss_svc="squared_hinge",
+    penalty_svc="l2",
+    tol_svc=0.0001,
+    ):
     # Model initialization
     print("Initializing models...")
     current_optimal_lr = {
-        "C" : np.float64(0.4844998146905259), 
-        "class_weight" : {0: 13.0, 1: 19.0, 2: 1.0}, 
-        "solver" : "lbfgs", 
-        "tol" : 0.0001
+        "C" : np.float64(C_lr), 
+        "class_weight" : class_weight_lr, 
+        "solver" : solver_lr, 
+        "tol" : tol_lr
     }
     current_optimal_svc = {
-        "C" : np.float64(0.4789691464869526),
-        "class_weight" : {0: 12.0, 1: 18.0, 2: 1.0},
-        "dual" : False,
-        "loss" : "squared_hinge",
-        "penalty" : "l2",
-        "tol" : 0.0001
+        "C" : np.float64(C_svc),
+        "class_weight" : class_weight_svc,
+        "dual" : dual_svc,
+        "loss" : loss_svc,
+        "penalty" : penalty_svc,
+        "tol" : tol_svc
     }
     lr_model = LogisticRegression(**current_optimal_lr)
     linearsvc_model = LinearSVC(**current_optimal_svc)
 
+    # returning relevant objects to be used in the main guard below
+    return lr_model, linearsvc_model
+
+def fit_models(lr_model, linearsvc_model, X_train_tfidf, y_train):
     # Model fitting
     print("Fitting models...")
     lr_model.fit(X_train_tfidf, y_train)
     linearsvc_model.fit(X_train_tfidf, y_train)
 
+    return lr_model, linearsvc_model
+
+def models_predict(lr_model, linearsvc_model, X_test_tfidf):
     # Model prediction
     print("Making predictions...")
     lr_preds = lr_model.predict(X_test_tfidf)
     linearsvc_preds = linearsvc_model.predict(X_test_tfidf)
 
     # returning relevant objects to be used in the main guard below
-    return y_test, lr_preds, linearsvc_preds, lr_model, linearsvc_model, vectorizer
+    return lr_preds, linearsvc_preds
 
 # function to return classification report
 def classification_report_func(y_test, lr_preds, linearsvc_preds):
@@ -159,6 +243,13 @@ def dump_models(lr_model, linearsvc_model, vectorizer):
     print("Models have been successfully been pickled.")
 
 if __name__ == "__main__":
-    y_test, lr_preds, linearsvc_preds, lr_model, linearsvc_model, vectorizer = run_training_pipeline()
+    df = sql_retrieval_reviews()
+    slang_df = sql_retrieval_lexicons()
+    df = data_preprocessing(df, slang_df)
+    X_train, X_test, y_train, y_test = perform_tts(df)
+    X_train_tfidf, X_test_tfidf, vectorizer = vectorize_test(X_train, X_test)
+    lr_model, linearsvc_model = initialize_models()
+    lr_model, linearsvc_model = fit_models(lr_model, linearsvc_model, X_train_tfidf, y_train)
+    lr_preds, linearsvc_preds = models_predict(lr_model, linearsvc_model, X_test_tfidf)
     classification_report_func(y_test, lr_preds, linearsvc_preds)
     dump_models(lr_model, linearsvc_model, vectorizer)
