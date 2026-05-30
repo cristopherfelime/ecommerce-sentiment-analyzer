@@ -15,6 +15,9 @@ import nltk
 nltk.download("stopwords")
 from nltk.corpus import stopwords
 
+# ---------------------------------------------------------------------
+
+# support functions
 
 # function to remove missing values
 def clean_missing_val(df):
@@ -49,7 +52,9 @@ def clean_dupe_rows(df):
 def clean_df(df):
     df = clean_missing_val(df)
     df = clean_dupe_rows(df)
-    return df
+    return df.copy()
+
+# ---------------------------------------------------------------------
 
 # main training pipeline
 
@@ -116,23 +121,55 @@ def sql_retrieval_lexicons():
     return slang_df
 
 # function to preprocess data
-def data_preprocessing(df, slang_df):
+def data_preprocessing(df=None, slang_df=None, slang_input=None):
 
     # Data Cleaning
-    df = clean_df(df)
+    if df is not None:
+        df = clean_df(df)
+
+        # Ordinal Encoding
+        print("Encoding sentiment labels...")
+        df["sentiment_label"] = df["sentiment_label"].map({"negative" : 0, "neutral" : 1, "positive" : 2})
+    else:
+        print("No reviews dataframe provided, skipping data cleaning..")
 
     # Clean review text using slang dictionary
-    slang_dict = dict(zip(slang_df["slang"], slang_df["formal"]))
-    print("Cleaning review text using slang dictionary...")
-    df["review_text"] = df["review_text"].apply(lambda x : pipeline.clean_review_text(text=x, data_dict=slang_dict))
-
-    # Ordinal Encoding
-    print("Encoding sentiment labels...")
-    df["sentiment_label"] = df["sentiment_label"].map({"negative" : 0, "neutral" : 1, "positive" : 2})
+    if slang_df is not None:
+        slang_dict = dict(zip(slang_df["slang"], slang_df["formal"]))
+        print("Cleaning review text using slang dictionary...")
+        if df is not None:
+            df["review_text"] = df["review_text"].apply(
+                lambda x : pipeline.clean_review_text(text=x, data_dict=slang_dict)
+            )
+        else:
+            print("Cannot perform slang cleaning, no dataframe provided.")
+    else:
+        print("No slang dataframe provided, skipping slang cleaning..")
+    
+    if df is not None and slang_input is not None:
+        df["review_text"] = df["review_text"].apply(
+            lambda x : pipeline.clean_review_text(text=x, data_dict=slang_input)
+        )
 
     # returning relevant objects to be used in the main guard below
-    return df
-
+    if df is not None and slang_df is not None:
+        print("Data cleaning returned df and slang_dict.")
+        return df, slang_dict
+    elif df is not None:
+        print("Data cleaning returned df only.")
+        if slang_input is not None:
+            print("Cleaning performed using input slang dictionary")
+            return df
+        else:
+            print("Warning: Cleaning may be incomplete due to no slang dictionary provided.")
+            return df
+    elif slang_df is not None:
+        print("Data cleaning returned slang_df only")
+        return slang_dict
+    else:
+        print("No data provided")
+        return None
+    
 # function to do train-test split
 def perform_tts(df):
 
@@ -161,7 +198,7 @@ def vectorize_test(X_train, X_test):
         "tidak", "bukan", "jangan", "belum", "tanpa", "kurang", "tak", "tiada",
         "tidaklah", "bukanlah", "belumlah", "janganlah", 
         "tidakkah", "bukankah", "belumkah", "bukannya",
-        "nggak", "gak", "ga", "ndak", "kagak", "enggak", "ngga"
+        "nggak", "gak", "ga", "ndak", "kagak", "enggak", "ngga", "engga"
     } # apparently nltk has these listed as stopwords lmao. this is to ensure that no negation words are present in the list of stopwords we're using (so that ngram may work properly)
     indo_stopwords = [i for i in indo_stopwords if i not in indo_negation_words]
     vectorizer = TfidfVectorizer(
@@ -242,11 +279,28 @@ def dump_models(lr_model, linearsvc_model, vectorizer):
     joblib.dump(vectorizer, "models/sentiment_vectorizer.pkl")
     print("Models have been successfully been pickled.")
 
+# ---------------------------------------------------------------------
+
+# main guard
+
 if __name__ == "__main__":
     df = sql_retrieval_reviews()
     slang_df = sql_retrieval_lexicons()
-    df = data_preprocessing(df, slang_df)
+    df, slang_input = data_preprocessing(df, slang_df)
     X_train, X_test, y_train, y_test = perform_tts(df)
+    # ----- testing block, we will try to augment our synthetic data to our training set here
+#
+#    synth_df = pd.read_csv("csv/synthetic_reviews.csv")
+#    synth_df = synth_df[["review_text", "sentiment_label"]]
+#    synth_df = data_preprocessing(df=synth_df, slang_input=slang_input)
+#    
+#    X_synth = synth_df["review_text"]
+#    y_synth = synth_df["sentiment_label"]
+#    
+#    X_train = pd.concat([X_train, X_synth], ignore_index=True)
+#    y_train = pd.concat([y_train, y_synth], ignore_index=True)
+
+    # -----
     X_train_tfidf, X_test_tfidf, vectorizer = vectorize_test(X_train, X_test)
     lr_model, linearsvc_model = initialize_models()
     lr_model, linearsvc_model = fit_models(lr_model, linearsvc_model, X_train_tfidf, y_train)

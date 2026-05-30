@@ -2,10 +2,14 @@ import re
 import emoji
 import pandas as pd
 
+# ---------------------------------------------------------------------
+
 # REGEX stuff (ill add explains later)
 HTML_TAG_RE = re.compile(r"<.*?>|&([a-z0-9]+|#[0-9]{1,6}|#x[0-9a-f]{1,6});")
 URL_RE = re.compile(r"https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)")
 SPEC_CHAR_RE = re.compile(r"[^a-zA-Z0-9\s:_]")
+
+# ---------------------------------------------------------------------
 
 # main text cleaning function
 def clean_review_text(text, data_dict=None):
@@ -35,6 +39,10 @@ def clean_review_text(text, data_dict=None):
                 
 
     return text
+
+# ---------------------------------------------------------------------
+
+# main guard
 
 if __name__ == "__main__":
     pass

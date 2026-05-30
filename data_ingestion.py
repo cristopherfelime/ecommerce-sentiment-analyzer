@@ -4,6 +4,8 @@ import os
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # returns the directory where the current script is located
 
+# ---------------------------------------------------------------------
+
 # initialize db connection and cursor
 def initialize_db():
     db_dir = os.path.join(BASE_DIR, "database") # create a directory string with "database" at the end
@@ -72,6 +74,10 @@ def ingest_lexicons(dict_path, conn):
     
     data.to_sql("lexicons", conn, if_exists="append", index=False)
     conn.commit()
+
+# ---------------------------------------------------------------------
+
+# main guard
 
 if __name__ == "__main__":
     conn, c = initialize_db()
