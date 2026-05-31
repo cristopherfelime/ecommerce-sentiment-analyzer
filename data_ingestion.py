@@ -54,15 +54,21 @@ def create_schema_lexicon(conn, c):
     conn.commit()
 
 # ingest the raw csv into sqlite
-def ingest_data(csv_path, conn):
-    df = pd.read_csv(csv_path)
-    df.to_sql("reviews", conn, if_exists="append", index=False)
+def ingest_data(conn, df=None, csv_path=None, table_name="reviews"):
+    if df is None:
+        if csv_path is None:
+            raise ValueError("csv_path not provided")
+        df = pd.read_csv(csv_path)
+    df.to_sql(table_name, conn, if_exists="append", index=False)
     conn.commit()
-    print(f"Successfully ingested {len(df)} rows into the database.")
+    print(f"Successfully ingested {len(df)} rows into table \"{table_name}\" in database.")
 
 # initialize slang dictionary, to prevent loading the big slang csv multiple times
-def ingest_lexicons(dict_path, conn):
-    data = pd.read_csv(dict_path)
+def ingest_lexicons(conn, data=None, dict_path=None):
+    if data is None:
+        if dict_path is None:
+            raise ValueError("dict_path not provided")
+        data = pd.read_csv(dict_path)
     data = data.loc[:, ["slang", "formal"]] # from the loaded csv, filter only columns slang and formal (automatic rearrangement as well)
     
     # a specific issue observed from test sample in notebook: resolving month name collisions (such as "jan" turning into "jangan")
@@ -83,8 +89,8 @@ if __name__ == "__main__":
     conn, c = initialize_db()
     create_schema_data(conn, c)
     create_schema_lexicon(conn, c)
-    ingest_data("csv/tokopedia_product_reviews_2025.csv", conn)
-    ingest_lexicons("csv/colloquial-indonesian-lexicon.csv", conn)
+    ingest_data(conn, csv_path="csv/tokopedia_product_reviews_2025.csv")
+    ingest_lexicons(conn, dict_path="csv/colloquial-indonesian-lexicon.csv")
 
 # test
 # c.execute("""
