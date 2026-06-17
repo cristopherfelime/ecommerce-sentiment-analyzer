@@ -29,3 +29,7 @@ models/
 
 # misc files
 desktop.ini
+
+# personal notes
+notebooks/
+streamlit_notes.py

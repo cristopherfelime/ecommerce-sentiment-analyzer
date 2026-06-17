@@ -1,3 +1,4 @@
+# python packages
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -5,8 +6,13 @@ import joblib
 import os
 import plotly.express as px
 
+# software pipelines and dedicated tools
 import pipeline
 import data_ingestion
+import database_utils
+
+# streamlit tabs
+from tabs import single_review, batch_analysis, database_bi
 
 # Page config setup
 st.set_page_config(
@@ -70,32 +76,19 @@ vectorizer, model = load_ml_pipeline() # this can stay up here since will be use
 # cache data loading (slang dictionary)
 @st.cache_data(show_spinner="Loading slang dictionary..", ttl="1h", max_entries=5)
 def load_slang_dict():
-    conn, _ = data_ingestion.initialize_db()
-    slang_dict = {}
-    try:
-        slang_df = pd.read_sql_query("""
-            SELECT slang, formal
-            FROM lexicons;
-        """, conn)
-        slang_dict = dict(zip(slang_df["slang"], slang_df["formal"]))
-    except Exception as e:
-        st.toast(f"Failed to load slang dictionary: {e}", icon="❌")
-    finally:
-        conn.close()
-    return slang_dict
+    slang_df, error_status_slang = database_utils.pull_db(columns=["slang", "formal"], table_name="lexicons")
+    slang_dict = dict(zip(slang_df["slang"], slang_df["formal"]))
+
+    return slang_dict, error_status_slang
+slang_dict, error_status_slang = load_slang_dict()
 # slang_dict no need to be a global variable cuz caching makes loading them faster
 # changing from global variable with if guard to local variable is actually better, especially for deployment. every time a new different user opens the app, it will run the database connection. but if we use caching, streamlit only needs to run the database connection once for getting the slang_dict. it takes it from the server RAM instead rather than running the database connection every time
 
 # cache data loading (reviews dataset (cleaned))
 @st.cache_data(show_spinner="Loading dataset from database...", ttl="2h", max_entries=10)
 def load_dataset_from_db():
-    conn, _ = data_ingestion.initialize_db()
-    try:
-        reviews_df = pd.read_sql_query("""
-            SELECT *
-            FROM reviews;
-        """, conn)
-        processed_reviews_df = reviews_df.dropna(subset=[
+    reviews_df, error_status_reviews = database_utils.pull_db(table_name="reviews")
+    processed_reviews_df = reviews_df.dropna(subset=[
             "product_id", 
             "product_name", 
             "product_category", 
@@ -106,12 +99,9 @@ def load_dataset_from_db():
             "review_text", 
             "review_date"
         ])
-        processed_reviews_df = processed_reviews_df.drop_duplicates(keep="first") # subset is wider than in train_model.py, that's why no duplicates are detected. for ML training, this can be fatal. but for BI, they're fine.
-    except Exception as e:
-        st.toast(f"Failed to load dataset from database: {e}", icon="❌")
-    finally:
-        conn.close()
-    return reviews_df, processed_reviews_df
+    processed_reviews_df = processed_reviews_df.drop_duplicates(keep="first") # subset is wider than in train_model.py, that's why no duplicates are detected. for ML training, this can be fatal. but for BI, they're fine.
+
+    return reviews_df, processed_reviews_df, error_status_reviews
 
 # cache data loading (database reviews preprocessing)
 @st.cache_data(show_spinner="Processing batch file..", ttl="1h", max_entries=10) # ttl and max_entries prevents memory usage from getting too high yes
@@ -283,82 +273,7 @@ tabs = st.tabs([
 # tab - single review
 
 with tabs[0]:
-    leader_index = None # to prevent error in the detailed prediction result json part
-    st.subheader("Single Review Classification")
-
-    layout_type = "A"
-    user_review = st.text_input("Input your user review: ")
-
-    if st.button("Submit Review"):
-        if user_review is not None and user_review != "":
-            st.write("Review was submitted.")
-            layout_type = "B"
-        else:
-            st.write("Please input a valid review!")
-            layout_type = "A"
-
-    if user_review is not None and user_review != "":
-        slang_dict = load_slang_dict()
-        st.session_state["cleaned_review"] = pipeline.clean_review_text(
-            text=user_review,
-            data_dict=slang_dict
-        )
-        st.session_state["review_vector"] = vectorizer.transform([st.session_state["cleaned_review"]]) # transform() function from vectorizer expects a list of strings, not just a string
-        st.session_state["prediction_proba"] = model.predict_proba(st.session_state["review_vector"])
-        probs = st.session_state["prediction_proba"][0] # predict_proba always returns 2D array, ts to ensure that argmax to work on it
-        leader_index = np.argmax(probs) # np.argmax takes the index of the max value
-        leader_proba = probs[leader_index]
-        if leader_proba >= prediction_threshold:
-            st.session_state["sentiment_label"] = "Positive" if leader_index == 2 else "Neutral" if leader_index == 1 else "Negative" if leader_index == 0 else "Error"
-        else:
-            st.session_state["sentiment_label"] = f"Uncertain, Confidence: {leader_proba*100:.2f}% that it is " + (
-                "Positive" if leader_index == 2 else
-                "Neutral" if leader_index == 1 else
-                "Negative" if leader_index == 0 else
-                "Error"
-            )
-        
-
-    container = st.container()
-    with container:
-        if layout_type == "A":
-            st.divider()
-            st.subheader("Result")
-            st.metric(
-                label="Sentiment Prediction:",
-                value="Waiting for submission...",
-            )
-        
-        elif layout_type == "B":
-            st.divider()
-            st.subheader("Result")
-            if user_review is not None or user_review != "":
-                st.metric(
-                    label="Sentiment Prediction",
-                    value=st.session_state["sentiment_label"],
-                )
-            else:
-                st.metric(
-                    label="Sentiment Prediction",
-                    value="Error!",
-                )
-
-            with st.expander(label="Detailed Prediction Result", expanded=False):
-                if st.session_state["prediction_proba"] is not None:
-                    st.write(f"Negative: {st.session_state["prediction_proba"][0][0]*100:.2f}%")
-                    st.write(f"Neutral: {st.session_state["prediction_proba"][0][1]*100:.2f}%")
-                    st.write(f"Positive: {st.session_state["prediction_proba"][0][2]*100:.2f}%")
-                    
-                    st.json({
-                        "Original Review" : user_review,
-                        "Cleaned Review" : st.session_state["cleaned_review"],
-                        "Sentiment Probabilities": {
-                            "Negative" : st.session_state["prediction_proba"][0][0],
-                            "Neutral" : st.session_state["prediction_proba"][0][1],
-                            "Positive" : st.session_state["prediction_proba"][0][2],
-                        },
-                        "Predicted Sentiment" : "Positive" if leader_index == 2 else "Neutral" if leader_index == 1 else "Negative" if leader_index == 0 else "Error",
-                    })
+    single_review.tab_content(vectorizer, model, prediction_threshold, slang_dict, error_status_slang)
 
 # -----------------------------
 
@@ -377,8 +292,13 @@ with tabs[1]:
     if uploaded_file is not None:
         st.info(f"File {uploaded_file.name} has been successfully uploaded")
 
-        slang_dict = load_slang_dict()
-        result_df, status = process_batch_file(uploaded_file, vectorizer, model, slang_dict)
+        slang_dict, error_status_slang = load_slang_dict()
+        if error_status_slang:
+            print(f"Failed to load slang dictionary from database - error_status: {error_status_slang}")
+            st.toast(error_status_slang, icon="❌")
+            result_df, status = process_batch_file(uploaded_file, vectorizer, model, None)
+        else:
+            result_df, status = process_batch_file(uploaded_file, vectorizer, model, slang_dict)
         processed_df = result_df.copy()
         if status != "Success":
             st.error(status)
@@ -481,49 +401,12 @@ with tabs[1]:
                     st.toast("Similar dataset already appended previously", icon="⚠️")
                 else:
                     # inserting into database
-                    conn, c = data_ingestion.initialize_db()
-                    try: # another way to prevent SQL injection
-                        processed_df_list = processed_df[[
-                            "review_text",
-                            "review_date",
-                            "review_id",
-                            "product_name",
-                            "product_category",
-                            "product_variant",
-                            "product_price",
-                            "product_url",
-                            "product_id",
-                            "rating",
-                            "sold_count",
-                            "shop_id",
-                            "sentiment_label"
-                        ]].to_numpy()
-                        c.executemany("""
-                                INSERT INTO reviews (
-                                    review_text,
-                                    review_date,
-                                    review_id,
-                                    product_name,
-                                    product_category,
-                                    product_variant,
-                                    product_price,
-                                    product_url,
-                                    product_id,
-                                    rating,
-                                    sold_count,
-                                    shop_id,
-                                    sentiment_label
-                                )
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """,
-                            processed_df_list
-                            )
-                        conn.commit()
-                        st.session_state["toast_queue"] = (f"{len(processed_df_list)} review(s) successfully appended to the database", "✅")
-                    except Exception as e:
-                        st.session_state["toast_queue"] = (f"Failed to append data to database: {e}", "❌")
-                    finally:
-                        conn.close()
+                    error_status = database_utils.push_db(df=processed_df, table_name="reviews")
+                    if error_status:
+                        st.session_state["toast_queue"] = (error_status, "❌")
+                    else:
+                        st.session_state["toast_queue"] = (f"{len(processed_df)} review(s) successfully appended to the database", "✅")
+                
                 st.rerun() # for the button to be disabled right after clicking
 
 # ---
@@ -632,7 +515,10 @@ with tabs[2]:
     st.write("Discover insights from the database within the visualizations present in this page.")
     st.write("Note: Duplicated entries from the reviews dataset pulled from the database is automatically omitted.")
 
-    reviews_df, processed_reviews_df = load_dataset_from_db()
+    reviews_df, processed_reviews_df, error_status_reviews = load_dataset_from_db()
+    if error_status_reviews:
+        print(f"Failed to load dataset from database - error_status: {error_status_reviews}")
+        st.toast(error_status_reviews, icon="❌")
     avg_vws = calc_avg_vws(processed_reviews_df)
     ts_df_counts = process_ts_cumsum_df(processed_reviews_df)
     trueneg_df_tidy = process_true_neg_df(processed_reviews_df)

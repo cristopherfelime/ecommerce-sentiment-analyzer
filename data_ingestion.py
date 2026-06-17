@@ -7,10 +7,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # returns the directory wh
 # ---------------------------------------------------------------------
 
 # initialize db connection and cursor
-def initialize_db():
+def initialize_db(db_inner_path="ecom_nlp_production.db"):
     db_dir = os.path.join(BASE_DIR, "database") # create a directory string with "database" at the end
     os.makedirs(db_dir, exist_ok=True) # create the directory based on path above (if it doesn't exist, due to exist_ok=True)
-    db_path = os.path.join(db_dir, "ecom_nlp_production.db") # combining the database folder file and the name of our soon-to-be database to form a path to the database file
+    db_path = os.path.join(db_dir, db_inner_path) # combining the database folder file and the name of our soon-to-be database to form a path to the database file
     conn = sqlite3.connect(db_path) # connect to a db from path above (creates one if not exists)
     c = conn.cursor() # initiate cursor object based on the connection
         
@@ -22,7 +22,7 @@ def initialize_db():
     
     return conn, c
 
-# creating predefined schema for our main data
+# creating predefined schema for our main data (reviews table)
 def create_schema_data(conn, c):
     c.execute("""
         CREATE TABLE IF NOT EXISTS reviews (
@@ -43,7 +43,7 @@ def create_schema_data(conn, c):
     """)
     conn.commit()
 
-# create a predefined schema for our lexicon data
+# create a predefined schema for our lexicon data (lexicons table)
 def create_schema_lexicon(conn, c):
     c.execute("""
         CREATE TABLE IF NOT EXISTS lexicons (
@@ -86,7 +86,7 @@ def ingest_lexicons(conn, data=None, dict_path=None):
 # main guard
 
 if __name__ == "__main__":
-    conn, c = initialize_db()
+    conn, c = initialize_db("ecom_nlp_production.db")
     create_schema_data(conn, c)
     create_schema_lexicon(conn, c)
     ingest_data(conn, csv_path="csv/tokopedia_product_reviews_2025.csv")
