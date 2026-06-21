@@ -288,19 +288,6 @@ if __name__ == "__main__":
     slang_df = sql_retrieval_lexicons()
     df, slang_input = data_preprocessing(df, slang_df)
     X_train, X_test, y_train, y_test = perform_tts(df)
-    # ----- testing block, we will try to augment our synthetic data to our training set here
-#
-#    synth_df = pd.read_csv("csv/synthetic_reviews.csv")
-#    synth_df = synth_df[["review_text", "sentiment_label"]]
-#    synth_df = data_preprocessing(df=synth_df, slang_input=slang_input)
-#    
-#    X_synth = synth_df["review_text"]
-#    y_synth = synth_df["sentiment_label"]
-#    
-#    X_train = pd.concat([X_train, X_synth], ignore_index=True)
-#    y_train = pd.concat([y_train, y_synth], ignore_index=True)
-
-    # -----
     X_train_tfidf, X_test_tfidf, vectorizer = vectorize_test(X_train, X_test)
     lr_model, linearsvc_model = initialize_models()
     lr_model, linearsvc_model = fit_models(lr_model, linearsvc_model, X_train_tfidf, y_train)

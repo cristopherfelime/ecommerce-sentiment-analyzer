@@ -91,21 +91,3 @@ if __name__ == "__main__":
     create_schema_lexicon(conn, c)
     ingest_data(conn, csv_path="csv/tokopedia_product_reviews_2025.csv")
     ingest_lexicons(conn, dict_path="csv/colloquial-indonesian-lexicon.csv")
-
-# test
-# c.execute("""
-#     SELECT review_id, review_text
-#     FROM reviews
-#     LIMIT 5;
-# """)
-
-# first_row = c.fetchone()
-# print(f"Row ID: {first_row[0]}")
-# print(f"Review Text: {first_row[1]}")
-
-# print("----")
-
-# all_rows = c.fetchall()
-# for row in all_rows:
-#     print(f"Row ID: {row[0]}")
-#     print(f"Review Text: {row[1]}")
