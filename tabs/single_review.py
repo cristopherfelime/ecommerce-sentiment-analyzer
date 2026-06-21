@@ -18,8 +18,9 @@ import streamlit as st
 import numpy as np
 
 import pipeline
+import app_utils
 
-def tab_content(vectorizer, model, prediction_threshold, slang_dict, error_status_slang):
+def tab_content(vectorizer, model, prediction_threshold):
     leader_index = None # to prevent error in the detailed prediction result json part
     st.subheader("Single Review Classification")
 
@@ -37,6 +38,7 @@ def tab_content(vectorizer, model, prediction_threshold, slang_dict, error_statu
             st.session_state["submitted_review"] = user_review # only if the user clicked submit review button again the global variable will be replaced by the new submitted review
             
             # we only run the ML models when the user actually submits the review
+            slang_dict, error_status_slang = app_utils.load_slang_dict()
             if error_status_slang:
                 print(f"Failed to load slang dictionary from database - error_status: {error_status_slang}")
                 st.toast(error_status_slang, icon="❌")
