@@ -89,5 +89,5 @@ if __name__ == "__main__":
     conn, c = initialize_db("ecom_nlp_production.db")
     create_schema_data(conn, c)
     create_schema_lexicon(conn, c)
-    ingest_data(conn, csv_path="csv/tokopedia_product_reviews_2025.csv")
-    ingest_lexicons(conn, dict_path="csv/colloquial-indonesian-lexicon.csv")
+    ingest_data(conn, csv_path=os.path.join("csv", "tokopedia_product_reviews_2025.csv"))
+    ingest_lexicons(conn, dict_path=os.path.join("csv", "colloquial-indonesian-lexicon.csv"))

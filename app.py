@@ -22,8 +22,9 @@ if "active_tab" not in st.session_state:
     st.session_state["active_tab"] = "Single Review Evaluator" # to preserve tab state on rerun
 if "cleaned_review" not in st.session_state:
     st.session_state["cleaned_review"] = None # will store the cleaned version of the review submitted by user
-if "review_vector" not in st.session_state:
-    st.session_state["review_vector"] = None # will store the vectorised version of the review submitted by user
+# if "review_vector" not in st.session_state:
+#     st.session_state["review_vector"] = None # will store the vectorised version of the review submitted by user
+# above not needed, but kept as future reference
 if "prediction_proba" not in st.session_state:
     st.session_state["prediction_proba"] = None # will store the prediction probability of the review submitted by user
 if "sentiment_label" not in st.session_state:
@@ -50,7 +51,7 @@ def run_queue_toast():
 run_queue_toast()
 
 # invoking cache loader (on first run success, the models will be stored in RAM instead of disk. On every rerun, its just gonna retrieve the model from RAM)
-vectorizer, model = app_utils.load_ml_pipeline() # this can stay up here since will be used for two tabs
+pipeline_ml = app_utils.load_ml_pipeline() # this can stay up here since will be used for two tabs
 
 # ----------------------------------------------------------------------
 
@@ -79,7 +80,7 @@ with st.sidebar:
     st.divider()
     st.markdown("### Machine Learning Model Metadata")
     st.json({
-        "Algorithm" : "Logistic Regression",
+        "Algorithm" : type(pipeline_ml.named_steps["best_model"]).__name__, # named_steps used to select a specific object or "step" inside a Pipeline object, now this should show the best model name instead of "Pipeline"
         "Text Vectorization" : "Term Frequency-Inverse Document Frequency",
         "Target Language" : "Informal Indonesian"
     }, expanded=False) # might add the hyperparameters here
@@ -102,14 +103,14 @@ tabs = st.tabs([
 # tab - single review
 
 with tabs[0]:
-    single_review.tab_content(vectorizer, model, prediction_threshold)
+    single_review.tab_content(pipeline_ml, prediction_threshold)
 
 # -----------------------------
 
 # tab - batch reviews
 
 with tabs[1]:    
-    batch_analysis.tab_content(vectorizer, model, prediction_threshold)
+    batch_analysis.tab_content(pipeline_ml, prediction_threshold)
 
 # -----------------------------
 

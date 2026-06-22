@@ -1,17 +1,12 @@
-ipykernel
+numpy==1.26.4
+pandas==2.2.2
+scikit-learn==1.5.1
+scipy==1.13.1
+plotly==5.24.1
 
-numpy
-pandas
-scikit-learn
-scipy
+regex==2024.9.11
+emoji==2.15.0
 
-matplotlib
-seaborn
-plotly
-
-regex
-emoji
-
-nltk
-joblib
-streamlit
+nltk==3.9.1
+joblib==1.4.2
+streamlit==1.58.0

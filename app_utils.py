@@ -11,16 +11,14 @@ import database_utils
 # Cache resource loading
 @st.cache_resource
 def load_ml_pipeline():
-    vectorizer_path = "models/sentiment_vectorizer.pkl"
-    model_path = "models/sentiment_lr_model.pkl"
+    pipeline_path = os.path.join("models", "pipeline_package.joblib")
 
-    if not os.path.exists(vectorizer_path) or not os.path.exists(model_path):
-        st.error("Required model file(s) are missing.")
-        return None, None
+    if not os.path.exists(pipeline_path):
+        st.error("Required pipeline package is missing.")
+        return None
     
-    vectorizer = joblib.load(vectorizer_path)
-    model = joblib.load(model_path)
-    return vectorizer, model
+    pipeline = joblib.load(pipeline_path)
+    return pipeline
 
 # cache data loading (slang dictionary)
 @st.cache_data(show_spinner="Loading slang dictionary..", ttl="1h", max_entries=5)
@@ -51,11 +49,11 @@ def load_dataset_from_db():
 
 # cache data loading (database reviews preprocessing)
 @st.cache_data(show_spinner="Processing batch file..", ttl="1h", max_entries=10) # ttl and max_entries prevents memory usage from getting too high yes
-def process_batch_file(uploaded_df, _vectorizer, _model, _slang_dict): # not used for single review, as its just gonna run once when its submitted, and it will retrieve values from the session state anyway
+def process_batch_file(uploaded_df, _pipeline_ml, _slang_dict): # not used for single review, as its just gonna run once when its submitted, and it will retrieve values from the session state anyway
     # underscore is just to tell streamlit to "trust me bro", streamlit wont look up hashes for cached data (complex models like these dont tend to be able to be hashed regardless)
     # it is to tell streamlit to not input the specific argument passed in its cache (hash table), so it just uses whatver it gives you without looking in its hash table (should increase performance as well)
     # uploaded_df may change depending on what the user uploads, so we will hash it. make sure streamlit knows whether uploaded_df changed or not
-    # vectorizer, model, and slang_dict most likely don't change, so we don't need to hash them. tell streamlit to trust us that it wont change, it makes it faster since streamlit wont check whether theyre the same every time the app is reran
+    # pipeline and slang_dict most likely don't change, so we don't need to hash them. tell streamlit to trust us that it wont change, it makes it faster since streamlit wont check whether theyre the same every time the app is reran
 
     uploaded_df = pd.read_csv(uploaded_df)
 
@@ -73,8 +71,9 @@ def process_batch_file(uploaded_df, _vectorizer, _model, _slang_dict): # not use
         lambda x : pipeline.clean_review_text(text=x, data_dict=_slang_dict)
     )
 
-    vectors = _vectorizer.transform(uploaded_df["cleaned_review"])
-    proba_matrix = _model.predict_proba(vectors) # should return matrix size of (n, 3)
+    # vectors = _vectorizer.transform(uploaded_df["cleaned_review"])
+    # proba_matrix = _model.predict_proba(vectors) # should return matrix size of (n, 3)
+    proba_matrix = _pipeline_ml.predict_proba(uploaded_df["cleaned_review"]) # since we moved to using pipeline, here we are just directly calling predict_proba method from the pipeline
 
     uploaded_df["predict_negative"] = proba_matrix[:, 0]
     uploaded_df["predict_neutral"] = proba_matrix[:, 1]

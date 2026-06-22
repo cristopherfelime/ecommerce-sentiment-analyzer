@@ -22,7 +22,7 @@ import plotly.express as px
 import app_utils
 import database_utils
 
-def tab_content(vectorizer, model, prediction_threshold):
+def tab_content(pipeline_ml, prediction_threshold):
     st.subheader("Batch Review Analysis")
     st.write("A .csv file is expected. A thorough analysis will be performed and business insights will be given.")
 
@@ -40,9 +40,9 @@ def tab_content(vectorizer, model, prediction_threshold):
         if error_status_slang:
             print(f"Failed to load slang dictionary from database - error_status: {error_status_slang}")
             st.toast(error_status_slang, icon="❌")
-            result_df, status = app_utils.process_batch_file(uploaded_file, vectorizer, model, None)
+            result_df, status = app_utils.process_batch_file(uploaded_file, pipeline_ml, None)
         else:
-            result_df, status = app_utils.process_batch_file(uploaded_file, vectorizer, model, slang_dict)
+            result_df, status = app_utils.process_batch_file(uploaded_file, pipeline_ml, slang_dict)
         processed_df = result_df.copy()
         if status != "Success":
             st.error(status)

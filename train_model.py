@@ -6,10 +6,13 @@ import pandas as pd
 import joblib
 import os
 from sklearn.model_selection import train_test_split
+from sklearn.model_selection import RandomizedSearchCV
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import LinearSVC
 from sklearn.metrics import classification_report
+from sklearn.pipeline import Pipeline
+from scipy.stats import loguniform, uniform
 
 import nltk
 nltk.download("stopwords")
@@ -213,47 +216,36 @@ def vectorize_test(X_train, X_test):
     # returning relevant objects to be used in the main guard below
     return X_train_tfidf, X_test_tfidf, vectorizer
 
-def initialize_models(
-    C_lr=0.4844998146905259,
-    C_svc=0.4789691464869526,
-    class_weight_lr={0: 13.0, 1: 19.0, 2: 1.0},
-    class_weight_svc={0: 12.0, 1: 18.0, 2: 1.0},
-    solver_lr="lbfgs",
-    tol_lr=0.0001,
-    dual_svc=False,
-    loss_svc="squared_hinge",
-    penalty_svc="l2",
-    tol_svc=0.0001,
-    ):
+def initialize_models():
     # Model initialization
     print("Initializing models...")
-    current_optimal_lr = {
-        "C" : np.float64(C_lr), 
-        "class_weight" : class_weight_lr, 
-        "solver" : solver_lr, 
-        "tol" : tol_lr
-    }
-    current_optimal_svc = {
-        "C" : np.float64(C_svc),
-        "class_weight" : class_weight_svc,
-        "dual" : dual_svc,
-        "loss" : loss_svc,
-        "penalty" : penalty_svc,
-        "tol" : tol_svc
-    }
-    lr_model = LogisticRegression(**current_optimal_lr)
-    linearsvc_model = LinearSVC(**current_optimal_svc)
+    lr_model = LogisticRegression(
+        max_iter=1000,
+        random_state=42,
+    )
+    linearsvc_model = LinearSVC(
+        multi_class="ovr",
+        random_state=42,
+    )
 
     # returning relevant objects to be used in the main guard below
     return lr_model, linearsvc_model
 
-def fit_models(lr_model, linearsvc_model, X_train_tfidf, y_train):
+def tune_fit_models(lr_model, linearsvc_model, distribution_lr, distribution_svc, lr_rscv_params, svc_rscv_params, X_train_tfidf, y_train):
+    # Hyperparameter tuning with RandomizedSearchCV
+    lr_rscv = RandomizedSearchCV(lr_model, distribution_lr, **lr_rscv_params, refit=True)
+    linearsvc_rscv = RandomizedSearchCV(linearsvc_model, distribution_svc, **svc_rscv_params, refit=True)
+
     # Model fitting
     print("Fitting models...")
-    lr_model.fit(X_train_tfidf, y_train)
-    linearsvc_model.fit(X_train_tfidf, y_train)
+    lr_rscv.fit(X_train_tfidf, y_train)
+    linearsvc_rscv.fit(X_train_tfidf, y_train)
 
-    return lr_model, linearsvc_model
+    # showing best params found in console
+    print(f"Best Logistic Regression Parameters found: {lr_rscv.best_params_}")
+    print(f"Best Linear SVC Parameters found: {linearsvc_rscv.best_params_}")
+
+    return lr_rscv.best_estimator_, linearsvc_rscv.best_estimator_
 
 def models_predict(lr_model, linearsvc_model, X_test_tfidf):
     # Model prediction
@@ -271,12 +263,27 @@ def classification_report_func(y_test, lr_preds, linearsvc_preds):
     print("---Linear SVC---")
     print(classification_report(y_test, linearsvc_preds))
 
-# pickling/dumping our trained models
-def dump_models(lr_model, linearsvc_model, vectorizer):
+# pickling/dumpin the best model
+def dump_package(lr_model, lr_preds, linearsvc_model, linearsvc_preds, y_test, vectorizer):
+    # finding the best model based off macro avg f1 score
+    lr_score = classification_report(y_test, lr_preds, output_dict=True)["macro avg"]["f1-score"]
+    svc_score = classification_report(y_test, linearsvc_preds, output_dict=True)["macro avg"]["f1-score"]
+    best_model = lr_model if lr_score > svc_score else linearsvc_model
+    if lr_score > svc_score:
+        print("Logistic Regression is the best model (based on macro average f1-score).")
+    else:
+        print("LinearSVC is the best model (based on macro average f1-score).")
+
+    # now dumping the vectorizer and the best model
     os.makedirs("models", exist_ok=True)
-    joblib.dump(lr_model, "models/sentiment_lr_model.pkl")
-    joblib.dump(linearsvc_model, "models/sentiment_linearsvc_model.pkl")
-    joblib.dump(vectorizer, "models/sentiment_vectorizer.pkl")
+    pickle_path = os.path.join("models", "pipeline_package.joblib")
+
+    pipeline_models = Pipeline([
+        ("vectorizer", vectorizer), # so pipeline except last one to be transformers 
+        ("best_model", best_model) # so when predict() or any other model methods are called, it will go through all of the steps in the pipeline
+    ]) # so ts essentially cool since it basically bundles every necessary objects and steps for preprocessing up to prediction into one
+
+    joblib.dump(pipeline_models, pickle_path)
     print("Models have been successfully been pickled.")
 
 # ---------------------------------------------------------------------
@@ -290,7 +297,64 @@ if __name__ == "__main__":
     X_train, X_test, y_train, y_test = perform_tts(df)
     X_train_tfidf, X_test_tfidf, vectorizer = vectorize_test(X_train, X_test)
     lr_model, linearsvc_model = initialize_models()
-    lr_model, linearsvc_model = fit_models(lr_model, linearsvc_model, X_train_tfidf, y_train)
+
+    # Setting up hyperparameters for optimization
+    distribution_lr = [{ # hyperparams for logistic regression
+        "C" : loguniform(0.01, 1.0), # inverse regularization parameter, log uniform numbers from 0.01 to 100 (0.01, 0.1, 1, 10, 100)
+        "solver" : ["lbfgs"], # optimization/solver algorithm used when training
+        "tol" : [0.0001, 0.001], # numerical tolerance, training stops when model performance improvement drops below the number
+        "class_weight" : [{0: 10.0, 1: 15.0, 2: 1.0},
+                          {0: 12.0, 1: 18.0, 2: 1.0},
+                          {0: 14.0, 1: 20.0, 2: 1.0},
+                          {0: 16.0, 1: 22.0, 2: 1.0},
+                          {0: 18.0, 1: 25.0, 2: 1.0},
+                          {0: 20.0, 1: 28.0, 2: 1.0}] # penalty rate for each label if the model got it wrong
+    }]
+    distribution_svc = [ # hyperparams for linear svc
+        # for squared hinge loss
+        {
+            "C" : loguniform(0.1, 1.0),
+            "penalty" : ["l2"],
+            "loss" : ["squared_hinge"],
+            "dual" : [False],
+            "tol" : [0.0001, 0.001],
+            "class_weight" : [{0: 12.0, 1: 18.0, 2: 1.0},
+                            {0: 15.0, 1: 20.0, 2: 1.0},
+                            {0: 18.0, 1: 25.0, 2: 1.0},
+                            {0: 22.0, 1: 30.0, 2: 1.0}]
+        },
+        # for traditional hinge loss
+        {
+            "C" : loguniform(0.1, 1.0),
+            "penalty" : ["l2"],
+            "loss" : ["hinge"],
+            "dual" : [True], # dual=True is required for traditional hinge loss, though performance may be degraded cuz our n_samples > n_features
+            "tol" : [0.0001, 0.001],
+            "class_weight": [{0: 12.0, 1: 18.0, 2: 1.0},
+                            {0: 15.0, 1: 20.0, 2: 1.0},
+                            {0: 18.0, 1: 25.0, 2: 1.0},
+                            {0: 22.0, 1: 30.0, 2: 1.0}]
+        }
+    ]
+
+    # Now ts for the RandomizedSearchCV initializations for each models
+    lr_rscv_params = { # for logistic regression
+        "n_iter": 15, # number of repetition, 15 * 3 = 45 tries, so larger will be slower but more param combinations will be tried
+        "cv": 3, # cross validation folds, 3 folds will divide training data into 3 (approx 66% train, 33% val), and do this 3 times
+        "scoring": "f1_macro", # f1 macro is used cuz both precision and recall matters (and our current dataset is HEAVILY imbalanced)
+        "random_state": 42, # for reproducitbility
+        "n_jobs": -1, # use all available processors
+    }
+    
+    svc_rscv_params = { # for linear svc
+        "n_iter": 15,
+        "cv": 3,
+        "scoring": "f1_macro",
+        "random_state": 42,
+        "n_jobs": -1, 
+    }
+
+    lr_model, linearsvc_model = tune_fit_models(lr_model, linearsvc_model, distribution_lr, distribution_svc, lr_rscv_params, svc_rscv_params, X_train_tfidf, y_train)
     lr_preds, linearsvc_preds = models_predict(lr_model, linearsvc_model, X_test_tfidf)
-    classification_report_func(y_test, lr_preds, linearsvc_preds)
-    dump_models(lr_model, linearsvc_model, vectorizer)
+    best_model = classification_report_func(y_test, lr_preds, linearsvc_preds)
+    dump_package(lr_model, lr_preds, linearsvc_model, linearsvc_preds, y_test, vectorizer)

@@ -20,7 +20,7 @@ import numpy as np
 import pipeline
 import app_utils
 
-def tab_content(vectorizer, model, prediction_threshold):
+def tab_content(pipeline_ml, prediction_threshold):
     leader_index = None # to prevent error in the detailed prediction result json part
     st.subheader("Single Review Classification")
 
@@ -51,8 +51,9 @@ def tab_content(vectorizer, model, prediction_threshold):
                     text=user_review,
                     data_dict=slang_dict
                 )
-            st.session_state["review_vector"] = vectorizer.transform([st.session_state["cleaned_review"]]) # transform() function from vectorizer expects a list of strings, not just a string
-            st.session_state["prediction_proba"] = model.predict_proba(st.session_state["review_vector"])
+            # st.session_state["review_vector"] = vectorizer.transform([st.session_state["cleaned_review"]]) # transform() function from vectorizer expects a list of strings, not just a string
+            # st.session_state["prediction_proba"] = model.predict_proba(st.session_state["review_vector"])
+            st.session_state["prediction_proba"] = pipeline_ml.predict_proba([st.session_state["cleaned_review"]]) # pipeline upgrade
         else: # included the backend button logic inside the if statement above, just a tiny optimization
             st.write("Please input a valid review.")
             st.session_state["layout_type"] = "A"
